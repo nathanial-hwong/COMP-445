@@ -54,7 +54,7 @@ def main() -> None:
 
     server_cmd = [
         args.python_exe,
-        "server.py",
+        "40243583_Lab3_server.py",
         "--bind",
         args.host,
         "--port",
@@ -71,7 +71,7 @@ def main() -> None:
 
     client_cmd = [
         args.python_exe,
-        "client.py",
+        "40243583_Lab3_client.py",
         args.host,
         str(args.port),
         input_path.name,
