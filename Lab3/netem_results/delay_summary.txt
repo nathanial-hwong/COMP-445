@@ -1,0 +1,11 @@
+scenario=delay
+netem=delay 120ms 25ms
+segment_size=512
+timeout_s=0.8
+elapsed_s=5.991152
+file_bytes=5644
+throughput_bytes_per_s=942.06
+retries=4
+src_hash=3ad24338da7242cffa9f7ef339537124c8f4f2cebebccc1be922919fed182c07
+out_hash=3ad24338da7242cffa9f7ef339537124c8f4f2cebebccc1be922919fed182c07
+status=SUCCESS
