@@ -1,8 +1,12 @@
 import argparse
 import enum
+import hashlib
 import random
 import socket
 import struct
+import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -261,11 +265,160 @@ def run_client(opts: argparse.Namespace) -> None:
     print(f"File received successfully: {save_to}")
 
 
+# Demo mode code
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def run_demo() -> None:
+    base = Path(__file__).resolve().parent
+    output_dir = base / "output"
+    output_dir.mkdir(exist_ok=True)
+
+    host = "127.0.0.1"
+    port = 9000
+    segment_size = 512
+    timeout = 1.0
+    input_file = "apple.jpg"
+
+    input_path = base / input_file
+    if not input_path.is_file():
+        raise SystemExit(f"Input file not found: {input_path}")
+
+    output_path = output_dir / f"{input_path.stem}_out{input_path.suffix}"
+    trace_path = output_dir / "transfer_trace.log"
+    summary_path = output_dir / "transfer_summary.txt"
+    server_tmp = base / "_tmp_server_trace.log"
+    client_tmp = base / "_tmp_client_trace.log"
+
+    for p in (output_path, trace_path, summary_path, server_tmp, client_tmp):
+        if p.exists():
+            p.unlink()
+
+    server_cmd = [
+        sys.executable,
+        "40243583_Lab3_server.py",
+        "--bind",
+        host,
+        "--port",
+        str(port),
+        "--segment-size",
+        str(segment_size),
+        "--timeout",
+        str(timeout),
+        "--base-dir",
+        ".",
+        "--trace-file",
+        server_tmp.name,
+    ]
+
+    client_cmd = [
+        sys.executable,
+        "40243583_Lab3_client.py",
+        host,
+        str(port),
+        input_file,
+        "--segment-size",
+        str(segment_size),
+        "--timeout",
+        str(timeout),
+        "--output",
+        str(output_path.relative_to(base)),
+        "--trace-file",
+        client_tmp.name,
+    ]
+
+    server_proc = subprocess.Popen(
+        server_cmd,
+        cwd=base,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    try:
+        time.sleep(0.6)
+        start = time.monotonic()
+        client_run = subprocess.run(client_cmd, cwd=base, check=False)
+        end = time.monotonic()
+        if client_run.returncode != 0:
+            raise SystemExit(f"Client failed with exit code {client_run.returncode}")
+    finally:
+        server_proc.terminate()
+        try:
+            server_proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            server_proc.kill()
+            server_proc.wait(timeout=2)
+
+    src_hash = sha256_file(input_path)
+    out_hash = sha256_file(output_path)
+    if src_hash != out_hash:
+        raise SystemExit("Hash mismatch: output file does not match input")
+
+    with trace_path.open("w", encoding="utf-8") as merged:
+        merged.write(
+            f"==== run segment-size={segment_size} file={input_path.name} "
+            f"host={host} port={port} ====\n"
+        )
+        if server_tmp.exists():
+            merged.write(server_tmp.read_text(encoding="utf-8"))
+        if client_tmp.exists():
+            merged.write(client_tmp.read_text(encoding="utf-8"))
+
+    if server_tmp.exists():
+        server_tmp.unlink()
+    if client_tmp.exists():
+        client_tmp.unlink()
+
+    elapsed = max(end - start, 0.0)
+    file_bytes = input_path.stat().st_size
+    throughput = (file_bytes / elapsed) if elapsed > 0 else 0.0
+    retries = 0
+    if trace_path.exists():
+        retries = trace_path.read_text(encoding="utf-8").count("type=RETRY")
+
+    summary_path.write_text(
+        "\n".join(
+            [
+                "scenario=demo",
+                f"host={host}",
+                f"port={port}",
+                f"segment_size={segment_size}",
+                f"timeout_s={timeout}",
+                f"input_file={input_path.name}",
+                f"output_file={output_path.name}",
+                f"trace_file={trace_path.name}",
+                f"elapsed_s={elapsed:.6f}",
+                f"file_bytes={file_bytes}",
+                f"throughput_bytes_per_s={throughput:.2f}",
+                f"retries={retries}",
+                f"src_hash={src_hash}",
+                f"out_hash={out_hash}",
+                f"status={'SUCCESS' if src_hash == out_hash else 'HASH_MISMATCH'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    print(f"PASS segment-size={segment_size} hash={out_hash}")
+    print(f"Output: {output_path}")
+    print(f"Trace:  {trace_path}")
+    print(f"Summary: {summary_path}")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="UDP stop-and-wait file client")
-    parser.add_argument("server_ip", help="Server IP address")
-    parser.add_argument("server_port", type=int, help="Server UDP port")
-    parser.add_argument("filename", help="File name to request")
+    parser = argparse.ArgumentParser(description="UDP stop-and-wait file client (or demo mode with no args)")
+    parser.add_argument("server_ip", nargs="?", default=None, help="Server IP address (omit for demo mode)")
+    parser.add_argument("server_port", nargs="?", type=int, default=None, help="Server UDP port (omit for demo mode)")
+    parser.add_argument("filename", nargs="?", default=None, help="File name to request (omit for demo mode)")
     parser.add_argument(
         "--segment-size",
         type=int,
@@ -289,6 +442,15 @@ def main() -> None:
         help="Optional path to write packet trace logs (overwrites on each run)",
     )
     opts = parser.parse_args()
+
+    # Check if in demo mode (no positional arguments provided)
+    if opts.server_ip is None:
+        run_demo()
+        return
+
+    # Client mode: all positional args required
+    if opts.server_port is None or opts.filename is None:
+        parser.error("When using client mode, server_ip, server_port, and filename are all required")
 
     if opts.segment_size <= 0:
         raise SystemExit("--segment-size must be > 0")
