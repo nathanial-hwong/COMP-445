@@ -9,7 +9,6 @@ from datetime import datetime
 from pathlib import Path
 
 
-# Protocol definitions (from protocol.py)
 class MessageType(enum.IntEnum):
     REQUEST = 1
     DATA = 2
@@ -17,7 +16,6 @@ class MessageType(enum.IntEnum):
     ERROR = 4
 
 
-# Header: connection_id (4B), sequence_number (4B), message_type (1B), payload_length (2B)
 HEADER_STRUCT = struct.Struct("!IIBH")
 HEADER_SIZE = HEADER_STRUCT.size
 
@@ -193,7 +191,6 @@ def send_file_stop_and_wait(
         while True:
             chunk = source.read(segment_size)
 
-            # For exact multiples of segment_size, send an empty final packet.
             is_final = len(chunk) < segment_size
 
             packet = make_data(connection_id, seq, chunk)

@@ -12,7 +12,6 @@ from datetime import datetime
 from pathlib import Path
 
 
-# Protocol definitions (from protocol.py)
 class MessageType(enum.IntEnum):
     REQUEST = 1
     DATA = 2
@@ -20,7 +19,6 @@ class MessageType(enum.IntEnum):
     ERROR = 4
 
 
-# Header: connection_id (4B), sequence_number (4B), message_type (1B), payload_length (2B)
 HEADER_STRUCT = struct.Struct("!IIBH")
 HEADER_SIZE = HEADER_STRUCT.size
 
@@ -86,7 +84,6 @@ def make_ack(connection_id: int, sequence_number: int) -> Packet:
     )
 
 
-# Client code
 def log_msg(
     log_file,
     direction: str,
@@ -265,7 +262,6 @@ def run_client(opts: argparse.Namespace) -> None:
     print(f"File received successfully: {save_to}")
 
 
-# Demo mode code
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -443,7 +439,7 @@ def main() -> None:
     )
     opts = parser.parse_args()
 
-    # Check if in demo mode (no positional arguments provided)
+    # Check if in demo mode
     if opts.server_ip is None:
         run_demo()
         return
